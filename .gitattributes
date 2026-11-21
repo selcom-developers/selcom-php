@@ -1,0 +1,6 @@
+* text=auto eol=lf
+*.php diff=php
+/tests/vectors export-ignore
+/.github export-ignore
+/phpstan.neon.dist export-ignore
+/phpunit.xml.dist export-ignore
