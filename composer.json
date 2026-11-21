@@ -1,0 +1,72 @@
+{
+    "name": "selcom-developers/selcom-php",
+    "description": "Framework-agnostic PHP client for the Selcom API gateway: signing, checkout, payouts, webhooks. Not affiliated with Selcom Paytech Ltd.",
+    "type": "library",
+    "license": "Apache-2.0",
+    "keywords": [
+        "selcom",
+        "tanzania",
+        "payments",
+        "psr-18",
+        "mobile-money"
+    ],
+    "homepage": "https://github.com/selcom-developers/selcom-php",
+    "authors": [
+        {
+            "name": "Selcom Developers community",
+            "homepage": "https://github.com/selcom-developers"
+        }
+    ],
+    "support": {
+        "issues": "https://github.com/selcom-developers/selcom-php/issues",
+        "source": "https://github.com/selcom-developers/selcom-php"
+    },
+    "require": {
+        "php": "^8.2",
+        "ext-hash": "*",
+        "ext-json": "*",
+        "php-http/discovery": "^1.20",
+        "psr/clock": "^1.0",
+        "psr/http-client": "^1.0",
+        "psr/http-factory": "^1.0",
+        "psr/http-message": "^1.1 || ^2.0"
+    },
+    "require-dev": {
+        "guzzlehttp/guzzle": "^7.9",
+        "phpstan/phpstan": "^2.1",
+        "phpstan/phpstan-strict-rules": "^2.0",
+        "phpunit/phpunit": "^11.5 || ^12.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "SelcomDevelopers\\Selcom\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "SelcomDevelopers\\Selcom\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit",
+        "analyse": "phpstan analyse --memory-limit=1G",
+        "check": [
+            "@composer validate --strict",
+            "@analyse",
+            "@test"
+        ]
+    },
+    "config": {
+        "sort-packages": true,
+        "optimize-autoloader": false,
+        "classmap-authoritative": false,
+        "allow-plugins": {
+            "php-http/discovery": true
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true,
+    "suggest": {
+        "guzzlehttp/guzzle": "The default transport builds a Guzzle client per timeout profile (connect and read timeouts, a fresh connection for payments)"
+    }
+}
