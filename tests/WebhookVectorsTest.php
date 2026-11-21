@@ -27,7 +27,7 @@ final class WebhookVectorsTest extends TestCase
         self::assertIsInt($verification['window_seconds']);
         $samples = $fixture['samples'];
         self::assertIsArray($samples);
-        self::assertCount(11, $samples);
+        self::assertCount(15, $samples);
 
         $verifier = new WebhookVerifier(
             $verification['secret'],

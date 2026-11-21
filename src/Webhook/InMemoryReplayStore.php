@@ -13,8 +13,8 @@ use SelcomDevelopers\Selcom\SystemClock;
  */
 final class InMemoryReplayStore implements ReplayStore
 {
-    /** @var array<string, int> digest => expiry (unix seconds) */
-    private array $expires = [];
+    /** @var array<string, int> digest => last second the entry is live (unix time) */
+    private array $liveThrough = [];
 
     private readonly ClockInterface $clock;
 
@@ -23,18 +23,18 @@ final class InMemoryReplayStore implements ReplayStore
         $this->clock = $clock ?? new SystemClock();
     }
 
-    public function seen(string $digest, int $ttlSeconds): bool
+    public function seen(string $digest, int $keepUntil): bool
     {
         $now = $this->clock->now()->getTimestamp();
-        foreach ($this->expires as $key => $expiry) {
-            if ($expiry <= $now) {
-                unset($this->expires[$key]);
+        foreach ($this->liveThrough as $key => $last) {
+            if ($last < $now) {
+                unset($this->liveThrough[$key]);
             }
         }
-        if (isset($this->expires[$digest])) {
+        if (isset($this->liveThrough[$digest])) {
             return true;
         }
-        $this->expires[$digest] = $now + $ttlSeconds;
+        $this->liveThrough[$digest] = $keepUntil;
 
         return false;
     }
