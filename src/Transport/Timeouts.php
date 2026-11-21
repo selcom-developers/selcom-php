@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace SelcomDevelopers\Selcom\Transport;
 
+use SelcomDevelopers\Selcom\Operation;
 use SelcomDevelopers\Selcom\OperationKind;
 
 /**
@@ -30,5 +31,20 @@ final class Timeouts
     public function forKind(OperationKind $kind): TimeoutProfile
     {
         return $kind === OperationKind::Payment ? $this->payment : $this->query;
+    }
+
+    /**
+     * The profile for an operation. Payments use the payment profile. Writes (create, cancel,
+     * delete) keep the query timeouts but use a fresh connection, like payments, because they
+     * are never repeated.
+     */
+    public function forOperation(Operation $operation): TimeoutProfile
+    {
+        $profile = $this->forKind($operation->kind());
+        if ($operation->isWrite() && !$profile->freshConnection) {
+            return new TimeoutProfile($profile->connectSeconds, $profile->readSeconds, true);
+        }
+
+        return $profile;
     }
 }

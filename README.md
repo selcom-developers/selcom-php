@@ -2,8 +2,6 @@
 
 Framework-agnostic PHP client for the Selcom API gateway: request signing, checkout, payouts and webhooks.
 
-> **Status: not yet published to Packagist.** Version 0.1.0 is unreleased. Until it is published, install from the repository (see [Install](#install)).
->
 > **Not affiliated with Selcom Paytech Ltd.** This is a community project, written from scratch under the Apache License 2.0. "Selcom" names the API it talks to. For API access, credentials, contracts and support, go to Selcom: <https://developers.selcommobile.com/>. Where this README and Selcom's portal disagree about the API, the portal wins.
 
 Every layer is usable on its own and replaceable: the **signer** is a pure function, the **transport** is an interface, the **client** gives one typed method per operation, **results** carry both a typed status and the raw response, and the **webhook verifier** and **redactor** stand alone.
@@ -31,22 +29,17 @@ The rules this client follows (signing, result codes, retries, webhooks) live in
 
 Requires PHP 8.2 or later (CI runs 8.2, 8.3, 8.4 and 8.5). There is no framework dependency.
 
-Until the package is on Packagist, require it from the repository:
-
-```json
-{
-    "repositories": [{ "type": "vcs", "url": "https://github.com/selcom-developers/selcom-php" }],
-    "require": { "selcom-developers/selcom-php": "dev-main" }
-}
+```
+composer require selcom-developers/selcom-php
 ```
 
-The HTTP layer is PSR-18. The package finds a PSR-18 client and PSR-17 factories through [`php-http/discovery`](https://docs.php-http.org/en/latest/discovery.html), so install any one you like (Guzzle, Symfony HttpClient with a PSR-18 bridge, and so on):
+The HTTP layer is PSR-18, with PSR-17 factories found through [`php-http/discovery`](https://docs.php-http.org/en/latest/discovery.html). The default transport builds a [Guzzle](https://docs.guzzlephp.org/) client for each timeout profile, so the simplest setup is:
 
 ```
 composer require guzzlehttp/guzzle
 ```
 
-You can also pass your own client or your own transport explicitly: see [Transport](#transport).
+Any other PSR-18 client works too, but its timeouts are yours to set: pass a closure that builds one client per timeout profile, or pass the client with `clientManagesTimeouts: true` to confirm it applies them. A ready client without that flag is refused. See [Transport](#transport).
 
 **IP allowlist.** Selcom allows only the IP addresses on its allowlist to call the gateway. A first call from a new machine that fails with an unexplained error is usually this. Ask Selcom to allow your server's outbound address, for the sandbox and for production separately.
 
@@ -71,7 +64,7 @@ $config = new Config(
     ),
 );
 
-$client = new Client($config);                          // PSR-18 client found by discovery
+$client = new Client($config);                          // default transport: a Guzzle client per timeout profile
 
 // Persist the transid BEFORE you call (see "Idempotency"), then:
 $result = $client->utilityPayment(new UtilityPaymentRequest(
@@ -327,7 +320,7 @@ http_response_code($verdict->httpStatus());         // 200 for VALID, UNSIGNED, 
 
 - `verify(headers, rawBody)` never throws on bad input: bad input is `INVALID`. Header names are matched case-insensitively. The digest is compared in constant time. The timestamp window defaults to 300 seconds and is configurable.
 - `VALID` covers the fields named in `Signed-Fields`, which must include `order_id` and `transid` and may not contain `&`. Take the status and the amount from `orderStatus`, not from the delivery.
-- Verification is bounded and never throws: oversized input, numbers that are not whole numbers within 2^53 - 1, and anything unparseable are `INVALID`.
+- Verification is bounded: oversized input, numbers that are not whole numbers within 2^53 - 1, and anything unparseable are `INVALID`, never an exception. The one exception is `ReplayStoreException`, raised when your replay store itself fails: answer 5xx so the gateway delivers again.
 - `WebhookPayload::$amountTzs` parses text such as `"10,000"` strictly into whole shillings, or `null`.
 - The replay store keeps each digest until max(now, signed time) + window (`ReplayStore::seen($digest, $keepUntil)`; an entry is live through `$keepUntil`). In PHP-FPM each request is a new process, so give the verifier a shared `ReplayStore` (APCu, Redis); `InMemoryReplayStore` is for tests and long-running workers. Your own deduplication on `(order_id, transid)` is the durable guard.
 - **Open question in the spec:** it is not confirmed which key Selcom signs webhooks with. The samples assume your API secret. Until you have confirmed it in the sandbox, run in report-only mode: log the verdict and process anyway, relying on `orderStatus`. Default to rejecting `INVALID` once you have confirmed.
@@ -348,7 +341,7 @@ interface Transport
 
 `TransportRequest` carries the method, the full URL, the signed headers, the body and the `TimeoutProfile` to use. Implement the interface for a custom client, a proxy, request logging or a test fake, and pass it to `new Client($config, $transport)`. The contract: return a `TransportResponse` for **every** HTTP response whatever its status; throw `TransportException` only when no response arrived, classified `NotSent` only when the request provably never left; apply the timeouts; never retry.
 
-`Psr18Transport` is the default. It takes any PSR-18 client and PSR-17 factories, found by discovery when you pass nothing:
+`Psr18Transport` is the default. It takes PSR-17 factories (found by discovery when you pass none) and one of three ways to get a client with the right timeouts:
 
 ```php
 new Psr18Transport();                                   // a Guzzle client per timeout profile (needs guzzlehttp/guzzle)

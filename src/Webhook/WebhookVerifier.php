@@ -6,6 +6,7 @@ namespace SelcomDevelopers\Selcom\Webhook;
 
 use Psr\Clock\ClockInterface;
 use SelcomDevelopers\Selcom\Exception\ConfigurationException;
+use SelcomDevelopers\Selcom\Exception\ReplayStoreException;
 use SelcomDevelopers\Selcom\Signing\Hs256DigestSigner;
 use SelcomDevelopers\Selcom\Signing\RequestSigner;
 use SelcomDevelopers\Selcom\Signing\Timestamp;
@@ -15,7 +16,8 @@ use SelcomDevelopers\Selcom\SystemClock;
  * Verifies checkout webhook deliveries (spec: docs/webhooks.md, v0.2.1).
  *
  * `verify($headers, $rawBody)` takes the raw body exactly as received, before any framework
- * parses or rewrites it. It never throws: any input it cannot use is INVALID.
+ * parses or rewrites it. Any input it cannot use is INVALID and it throws nothing for input. The one
+ * exception is ReplayStoreException, when the replay store itself fails: answer 5xx.
  *
  * Which key Selcom signs webhooks with is an open question in the spec; the samples assume the
  * merchant's API secret. Until you have confirmed it in the sandbox, consider running in report-only
@@ -52,11 +54,15 @@ final class WebhookVerifier
 
     /**
      * @param array<string, string|list<string>> $headers Header names are matched case-insensitively
+     *
+     * @throws ReplayStoreException when the replay store fails (answer 5xx)
      */
     public function verify(#[\SensitiveParameter] array $headers, #[\SensitiveParameter] string $rawBody): WebhookVerdict
     {
         try {
             return $this->decide($headers, $rawBody);
+        } catch (ReplayStoreException $e) {
+            throw $e;
         } catch (\Throwable) {
             return WebhookVerdict::Invalid;
         }
@@ -135,7 +141,12 @@ final class WebhookVerifier
         }
 
         // 9. Replay: keep the digest until max(now, signed time) + window.
-        if ($this->replayStore->seen($digest, max($now, $signedAt) + $this->windowSeconds)) {
+        try {
+            $replayed = $this->replayStore->seen($digest, max($now, $signedAt) + $this->windowSeconds);
+        } catch (\Throwable $e) {
+            throw new ReplayStoreException('The replay store failed: ' . $e::class);
+        }
+        if ($replayed) {
             return WebhookVerdict::Replay;
         }
 

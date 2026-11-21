@@ -15,8 +15,8 @@ final class TimeoutProfile
         public readonly float $connectSeconds,
         public readonly float $readSeconds,
         /**
-         * Use a new connection for every request and do not keep it for reuse. The payment profile
-         * sets this: a custom client for that profile should disable connection reuse as well.
+         * Use a new connection for every request and do not keep it for reuse. Payments and
+         * writes use it: a custom client for that profile should disable connection reuse as well.
          */
         public readonly bool $freshConnection = false,
     ) {

@@ -28,8 +28,8 @@ final class FailureClassifier
     private const CONNECT_MESSAGE = '/could not resolve host|couldn\'t resolve host|name or service not known'
         . '|getaddrinfo|connection refused|failed to connect to|couldn\'t connect to server/i';
 
-    /** Evidence that the connection was made or that request bytes were sent (cURL timing keys). */
-    private const LATER_PHASE_KEYS = ['appconnect_time', 'pretransfer_time', 'starttransfer_time', 'size_upload'];
+    /** cURL counters of request bytes: both are zero when nothing of the request was written. */
+    private const SENT_KEYS = ['request_size', 'size_upload'];
 
     public static function classify(\Throwable $error): TransportFailure
     {
@@ -112,10 +112,9 @@ final class FailureClassifier
             return TransportFailure::NotSent;
         }
         if ($errno === self::CURL_TIMEOUT) {
-            // A timeout is a connect timeout only when cURL reports that the connection was never
-            // made: the connect time is present and zero, and nothing later has any time or bytes.
-            $connect = $context['connect_time'] ?? null;
-            if ((is_float($connect) || is_int($connect)) && (float) $connect === 0.0) {
+            // A timeout is a connect timeout only when cURL reports that no request bytes were
+            // written: both counters are present and zero. Missing counters prove nothing.
+            if (self::reportsNothingSent($context)) {
                 return TransportFailure::NotSent;
             }
         }
@@ -128,7 +127,7 @@ final class FailureClassifier
      */
     private static function sentSomething(array $context): bool
     {
-        foreach (self::LATER_PHASE_KEYS as $key) {
+        foreach (self::SENT_KEYS as $key) {
             $value = $context[$key] ?? null;
             if ((is_float($value) || is_int($value)) && (float) $value > 0.0) {
                 return true;
@@ -136,5 +135,20 @@ final class FailureClassifier
         }
 
         return false;
+    }
+
+    /**
+     * @param array<mixed> $context
+     */
+    private static function reportsNothingSent(array $context): bool
+    {
+        foreach (self::SENT_KEYS as $key) {
+            $value = $context[$key] ?? null;
+            if (!(is_float($value) || is_int($value)) || (float) $value !== 0.0) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

@@ -215,7 +215,7 @@ final class Client
                     $url,
                     $headers,
                     $signed->body,
-                    $this->config->timeouts->forKind($operation->kind()),
+                    $this->config->timeouts->forOperation($operation),
                 ));
             } catch (TransportException $e) {
                 if ($e->isNotSent() && $attempt < $attempts) {

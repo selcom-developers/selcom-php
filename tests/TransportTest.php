@@ -19,6 +19,7 @@ use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
 use SelcomDevelopers\Selcom\Exception\ConfigurationException;
 use SelcomDevelopers\Selcom\Exception\TransportException;
+use SelcomDevelopers\Selcom\Operation;
 use SelcomDevelopers\Selcom\Transport\Timeouts;
 use SelcomDevelopers\Selcom\Transport\FailureClassifier;
 use SelcomDevelopers\Selcom\Transport\Psr18Transport;
@@ -91,11 +92,16 @@ final class TransportTest extends TestCase
         yield 'curl 6 resolve' => [new ConnectException('x', $req, null, ['errno' => 6]), TransportFailure::NotSent];
         yield 'curl 7 refused' => [new ConnectException('x', $req, null, ['errno' => 7]), TransportFailure::NotSent];
         yield 'curl 35 tls connect' => [new ConnectException('x', $req, null, ['errno' => 35]), TransportFailure::NotSent];
-        yield 'connect timeout' => [new ConnectException('x', $req, null, ['errno' => 28, 'connect_time' => 0.0, 'pretransfer_time' => 0.0, 'starttransfer_time' => 0.0, 'size_upload' => 0.0]), TransportFailure::NotSent];
-        yield 'timeout after connect' => [new ConnectException('x', $req, null, ['errno' => 28, 'connect_time' => 0.02, 'pretransfer_time' => 0.31]), TransportFailure::UnknownOutcome];
-        yield 'timeout after bytes sent' => [new ConnectException('x', $req, null, ['errno' => 28, 'connect_time' => 0.0, 'size_upload' => 120.0]), TransportFailure::UnknownOutcome];
-        yield 'pretransfer zero but no connect time' => [new ConnectException('x', $req, null, ['errno' => 28, 'pretransfer_time' => 0.0]), TransportFailure::UnknownOutcome];
-        yield 'handshake error after bytes' => [new ConnectException('x', $req, null, ['errno' => 35, 'size_upload' => 10.0]), TransportFailure::UnknownOutcome];
+        // libcurl fills the pretransfer and start-transfer times even on failure: they prove nothing.
+        // Only the request-byte counters say whether any of the request was written.
+        $times = ['connect_time' => 0.0, 'pretransfer_time' => 0.0004, 'starttransfer_time' => 0.0004];
+        yield 'connect timeout' => [new ConnectException('x', $req, null, ['errno' => 28, 'request_size' => 0, 'size_upload' => 0.0] + $times), TransportFailure::NotSent];
+        yield 'refused with timings' => [new ConnectException('x', $req, null, ['errno' => 7, 'request_size' => 0, 'size_upload' => 0.0] + $times), TransportFailure::NotSent];
+        yield 'dns with timings' => [new ConnectException('x', $req, null, ['errno' => 6, 'request_size' => 0, 'size_upload' => 0.0] + $times), TransportFailure::NotSent];
+        yield 'read timeout on reused connection' => [new ConnectException('x', $req, null, ['errno' => 28, 'request_size' => 98, 'size_upload' => 20.0] + $times), TransportFailure::UnknownOutcome];
+        yield 'timeout, request size only' => [new ConnectException('x', $req, null, ['errno' => 28, 'request_size' => 71, 'size_upload' => 0.0]), TransportFailure::UnknownOutcome];
+        yield 'timeout, counters missing' => [new ConnectException('x', $req, null, ['errno' => 28, 'connect_time' => 0.0]), TransportFailure::UnknownOutcome];
+        yield 'handshake error after bytes' => [new ConnectException('x', $req, null, ['errno' => 35, 'request_size' => 10]), TransportFailure::UnknownOutcome];
         yield 'record-level tls error' => [new \RuntimeException('cURL error 56: OpenSSL SSL_read: bad record mac'), TransportFailure::UnknownOutcome];
         yield 'unreachable' => [new \RuntimeException('Network is unreachable'), TransportFailure::UnknownOutcome];
         yield 'timeout without timings' => [new ConnectException('x', $req, null, ['errno' => 28]), TransportFailure::UnknownOutcome];
@@ -191,11 +197,53 @@ final class TransportTest extends TestCase
         }
     }
 
+    public function testARefusedConnectionToARealClosedLocalPortIsNotSent(): void
+    {
+        $socket = stream_socket_server('tcp://127.0.0.1:0', $errno, $errstr);
+        self::assertNotFalse($socket);
+        $name = stream_socket_get_name($socket, false);
+        self::assertIsString($name);
+        fclose($socket); // the port is now closed
+        $port = (int) substr($name, (int) strrpos($name, ':') + 1);
+
+        $transport = Psr18Transport::discover();
+        $request = new TransportRequest(
+            'POST',
+            'http://127.0.0.1:' . $port . '/v1/vendor/balance',
+            ['Accept' => 'application/json'],
+            '{"vendor":"TILL123"}',
+            (new Timeouts())->payment,
+        );
+
+        try {
+            $transport->send($request);
+            self::fail('expected a TransportException');
+        } catch (TransportException $e) {
+            self::assertSame(TransportFailure::NotSent, $e->failure);
+        }
+    }
+
     public function testAReadyClientNeedsAnExplicitChoiceAboutTimeouts(): void
     {
         $client = $this->guzzle(new MockHandler([]));
         $this->expectException(ConfigurationException::class);
         new Psr18Transport($client);
+    }
+
+    public function testWritesUseAFreshConnectionWithQueryTimeouts(): void
+    {
+        $timeouts = new Timeouts();
+        foreach ([Operation::CheckoutCreateOrder, Operation::CheckoutCreateOrderMinimal, Operation::CheckoutCancelOrder, Operation::CheckoutDeleteCard] as $op) {
+            $profile = $timeouts->forOperation($op);
+            self::assertTrue($profile->freshConnection, $op->value);
+            self::assertSame([10.0, 10.0], [$profile->connectSeconds, $profile->readSeconds]);
+        }
+        foreach ([Operation::CheckoutWalletPayment, Operation::UtilityPaymentProcess, Operation::WalletCashinProcess, Operation::CheckoutCardPayment] as $op) {
+            self::assertSame([15.0, 180.0, true], [$timeouts->forOperation($op)->connectSeconds, $timeouts->forOperation($op)->readSeconds, $timeouts->forOperation($op)->freshConnection]);
+        }
+        foreach ([Operation::CheckoutOrderStatus, Operation::UtilityPaymentQuery, Operation::VendorBalance, Operation::CheckoutListOrders] as $op) {
+            self::assertFalse($timeouts->forOperation($op)->freshConnection, $op->value);
+        }
     }
 
     public function testPaymentProfileUsesAFreshConnection(): void

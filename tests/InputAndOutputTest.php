@@ -9,6 +9,7 @@ use PHPUnit\Framework\TestCase;
 use SelcomDevelopers\Selcom\Client;
 use SelcomDevelopers\Selcom\Currency;
 use SelcomDevelopers\Selcom\Exception\InvalidResponseException;
+use SelcomDevelopers\Selcom\Exception\ReplayStoreException;
 use SelcomDevelopers\Selcom\Exception\ValidationException;
 use SelcomDevelopers\Selcom\OperationKind;
 use SelcomDevelopers\Selcom\Redaction\Redactor;
@@ -25,6 +26,7 @@ use SelcomDevelopers\Selcom\Transport\TimeoutProfile;
 use SelcomDevelopers\Selcom\Transport\TransportRequest;
 use SelcomDevelopers\Selcom\Transport\TransportResponse;
 use SelcomDevelopers\Selcom\Webhook\InMemoryReplayStore;
+use SelcomDevelopers\Selcom\Webhook\ReplayStore;
 use SelcomDevelopers\Selcom\Webhook\WebhookPayload;
 use SelcomDevelopers\Selcom\Webhook\WebhookVerdict;
 use SelcomDevelopers\Selcom\Webhook\WebhookVerifier;
@@ -274,6 +276,22 @@ final class InputAndOutputTest extends TestCase
             ['VALID', 'REPLAY', 'REPLAY', 'STALE'],
             [$first->value, $second->value, $third->value, $fourth->value],
         );
+    }
+
+    public function testReplayStoreFailureIsATypedErrorNotAVerdict(): void
+    {
+        $clock = FixedClock::at('2026-11-21T10:31:00+03:00');
+        $broken = new class implements ReplayStore {
+            public function seen(string $digest, int $keepUntil): bool
+            {
+                throw new \RuntimeException('cache is down');
+            }
+        };
+        $verifier = new WebhookVerifier('test-secret-0001', $clock, $broken);
+        [$headers, $body] = self::signedDelivery(['transid' => 'TXN-1', 'order_id' => 'ORD-1'], 'transid,order_id');
+
+        $this->expectException(ReplayStoreException::class);
+        $verifier->verify($headers, $body);
     }
 
     public function testReplayStoreBoundary(): void
