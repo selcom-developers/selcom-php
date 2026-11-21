@@ -11,7 +11,6 @@ The rules this client follows (signing, result codes, retries, webhooks) live in
 ## Contents
 
 - [Install](#install)
-- [IP whitelisting](#ip-whitelisting)
 - [Quickstart](#quickstart)
 - [Public API](#public-api)
 - [Configuration](#configuration)
@@ -41,15 +40,6 @@ composer require guzzlehttp/guzzle
 ```
 
 Any other PSR-18 client works too, but its timeouts are yours to set: pass a closure that builds one client per timeout profile, or pass the client with `clientManagesTimeouts: true` to confirm it applies them. A ready client without that flag is refused. See [Transport](#transport).
-
-## IP whitelisting
-
-Selcom's gateway accepts requests only from server IP addresses that Selcom has whitelisted (allowlisted) for your account. Sandbox and production are whitelisted separately.
-
-- Before your first call, send Selcom the public outbound (egress) IP address of every server that will call the API, for each environment you use.
-- Hosts without a fixed outbound address (serverless functions, autoscaling containers, many platform defaults, home or office connections) need a static egress IP, for example through a NAT gateway or a proxy.
-- When servers or hosting change, ask Selcom to update the list before you move traffic.
-- A request from an address that is not whitelisted is rejected by the gateway, and Selcom does not document the exact response. If your first sandbox call fails, check the whitelisting first. Treat such a rejection as a configuration problem, never as a payment outcome, and never pay again because of it.
 
 ## Quickstart
 
