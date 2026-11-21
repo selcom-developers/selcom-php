@@ -3,9 +3,9 @@
 
 Framework-agnostic PHP client for the Selcom API gateway: request signing, checkout, payouts and webhooks.
 
-> **Not affiliated with Selcom Paytech Ltd.** This is a community project under the Apache License 2.0. "Selcom" names the API it talks to. For API access, credentials, contracts and support, go to Selcom: <https://developers.selcommobile.com/>. Where this README and Selcom's portal disagree about the API, the portal wins.
+Documentation: <https://selcom-developers.github.io/>
 
-Every layer is usable on its own and replaceable: the **signer** is a pure function, the **transport** is an interface, the **client** gives one typed method per operation, **results** carry both a typed status and the raw response, and the **webhook verifier** and **redactor** stand alone.
+> **Not affiliated with Selcom Paytech Ltd.** For API access, credentials, contracts and support, go to Selcom: <https://developers.selcommobile.com/>.
 
 ## Contents
 
@@ -26,7 +26,7 @@ Every layer is usable on its own and replaceable: the **signer** is a pure funct
 
 ## Install
 
-Requires PHP 8.2 or later (CI runs 8.2, 8.3, 8.4 and 8.5). There is no framework dependency.
+Requires PHP 8.2 or later.
 
 ```
 composer require selcom-developers/selcom-php
@@ -37,8 +37,6 @@ The HTTP layer is PSR-18, with PSR-17 factories found through [`php-http/discove
 ```
 composer require guzzlehttp/guzzle
 ```
-
-Any other PSR-18 client works too, but its timeouts are yours to set: pass a closure that builds one client per timeout profile, or pass the client with `clientManagesTimeouts: true` to confirm it applies them. A ready client without that flag is refused. See [Transport](#transport).
 
 ## Quickstart
 
@@ -82,12 +80,12 @@ switch ($result->status) {
 
 ## Public API
 
-The public surface is small on purpose, so that a framework package can sit on top of it. Everything is in the `SelcomDevelopers\Selcom` namespace.
+Everything is in the `SelcomDevelopers\Selcom` namespace.
 
 | Piece | Classes | What it is |
 |---|---|---|
 | Config | `Config`, `Credentials`, `Environment`, `Transport\Timeouts`, `Transport\TimeoutProfile` | Validated at construction. `Config::fromArray()` builds one from a framework config array. |
-| Signer | `Signing\RequestSigner`, `Signing\DigestSigner`, `Signing\Hs256DigestSigner`, `Signing\SignedRequest`, `Signing\Timestamp` | Pure signing: no I/O, no clock. The digest step is an interface, so RS256 can be added later. |
+| Signer | `Signing\RequestSigner`, `Signing\DigestSigner`, `Signing\Hs256DigestSigner`, `Signing\SignedRequest`, `Signing\Timestamp` | Pure signing: no I/O, no clock. |
 | Transport | `Transport\Transport`, `Transport\Psr18Transport`, `Transport\TransportRequest`, `Transport\TransportResponse`, `Transport\TransportFailure`, `Transport\FailureClassifier` | Replaceable HTTP layer, with one PSR-18 default. |
 | Client | `Client` | One typed method per operation, plus `execute()`. |
 | Requests | `Request\*Request`, `Request\Address`, `Request\PaymentMethod`, `Currency` | One typed request class per operation. |
@@ -96,7 +94,7 @@ The public surface is small on purpose, so that a framework package can sit on t
 | Redactor | `Redaction\Redactor` | Safe-to-log copies of headers, bodies and query strings. |
 | Errors | `Exception\*` (all implement `Exception\SelcomException`) | See [Error handling](#error-handling). |
 
-Semantic versioning applies to these classes from the first release. Classes marked `@internal` (`Request\Check`) are not part of the API.
+Classes marked `@internal` (`Request\Check`) are not part of the API.
 
 ## Configuration
 
@@ -145,7 +143,7 @@ $config = new Config(
 
 ## Operations
 
-One method per operation. Submitting and querying are separate methods: nothing hides a query inside a submit. Amounts are whole units. Request classes accept an `int`, a string of digits or an integral float, and refuse anything else (a fraction, a negative, zero, more than 9007199254740991) with a `ValidationException`; nothing is rounded or truncated. The signer applies the same rule to raw parameters.
+One method per operation. Amounts are whole units. Request classes accept an `int`, a string of digits or an integral float, and refuse anything else (a fraction, a negative, zero, more than 9007199254740991) with a `ValidationException`; nothing is rounded or truncated. The signer applies the same rule to raw parameters.
 
 ### Checkout
 
@@ -260,7 +258,7 @@ A transport error is never turned into `FAILED`.
 
 The client is stateless between calls: it does not lock, queue or deduplicate. Staying safe is your side of the contract.
 
-**The ID is the idempotency key.** `transid` identifies a payout or a payment attempt; `order_id` identifies a checkout order. The gateway refuses a second transaction with an ID it has seen. The maximum length and characters are not published, so keep IDs to 30 characters or fewer using `A-Z a-z 0-9 -`.
+**The ID is the idempotency key.** `transid` identifies a payout or a payment attempt; `order_id` identifies a checkout order. The gateway refuses a second transaction with an ID it has seen. Keep IDs to 30 characters or fewer using `A-Z a-z 0-9 -`.
 
 **What the client retries.** Nothing, by default. It **never** retries a payment or a write (create order, cancel, delete card), not after a timeout and not with the same ID. For read-only operations (queries, lookups, balance, list, stored cards) you may opt in with `maxNotSentRetries`, which repeats a request only after a `NotSent` error, with the same parameters and a fresh timestamp.
 
@@ -346,18 +344,7 @@ new Psr18Transport(fn (TimeoutProfile $p) => new GuzzleHttp\Client(Psr18Transpor
 new Psr18Transport($myPsr18Client, clientManagesTimeouts: true);   // a ready client: you confirm it applies the timeouts
 ```
 
-`Psr18Transport::guzzleOptions($profile)` returns what the default route uses. Written out, a per-profile Guzzle client looks like this:
-
-```php
-new Psr18Transport(fn (TimeoutProfile $p) => new GuzzleHttp\Client([
-    'connect_timeout' => $p->connectSeconds,
-    'timeout' => $p->connectSeconds + $p->readSeconds,
-    'allow_redirects' => false,
-    'http_errors' => false,
-    // payments only: a new connection every time, not kept for reuse
-    'curl' => $p->freshConnection ? [CURLOPT_FRESH_CONNECT => true, CURLOPT_FORBID_REUSE => true] : [],
-]));
-```
+`Psr18Transport::guzzleOptions($profile)` returns what the default route uses.
 
 **Timeouts and PSR-18.** PSR-18 has no way to pass a timeout with a request, so the timeouts live in the client, and no request runs without them. `Psr18Transport` therefore needs one of three things: nothing (it builds a Guzzle client per profile, so Guzzle must be installed), a closure that builds one client per `TimeoutProfile`, or a ready client together with `clientManagesTimeouts: true`, by which you confirm that the client applies the connect and read timeouts itself. A ready client without the flag is refused with a `ConfigurationException`.
 
@@ -390,7 +377,7 @@ $signed->query;          // GET/DELETE: percent-encoded query string (null on PO
 $signed->body;           // POST: compact JSON with flat keys (null on GET/DELETE)
 ```
 
-Nested arrays are flattened in place to dotted keys; the order is the order you give. Values are signed and sent as the same text; `null` becomes an empty string; fractional numbers, integers beyond 2^53 - 1, lists and empty objects are rejected with a `SigningException`. The behaviour is fixed by the shared vectors, so any change that breaks them fails the tests. Implement `DigestSigner` to add another digest method (RS256 is not implemented: Selcom has not confirmed the padding or the key registration).
+Nested arrays are flattened in place to dotted keys; the order is the order you give. Values are signed and sent as the same text; `null` becomes an empty string; fractional numbers, integers beyond 2^53 - 1, lists and empty objects are rejected with a `SigningException`. Implement `DigestSigner` to add another digest method.
 
 ## Redacting logs
 
@@ -431,7 +418,7 @@ composer test        # PHPUnit: the shared spec vectors, unit tests, no network
 composer analyse     # PHPStan at the max level, with the strict rules
 ```
 
-`scripts/check-spec.sh` (run in CI) checks that the copy is byte-identical to selcom-spec at `SPEC_VERSION`. The tests run every case and every reject in `signing.json`, every response scenario and every webhook sample from the shared spec, from a copy kept in `tests/vectors`. The spec version is recorded in `SPEC_VERSION`; refresh the copy with `scripts/refresh-spec.sh [tag]`.
+`scripts/check-spec.sh` (run in CI) checks that the copy is byte-identical to selcom-spec at `SPEC_VERSION`. The spec version is recorded in `SPEC_VERSION`; refresh the copy with `scripts/refresh-spec.sh [tag]`.
 
 No test calls the network. An opt-in sandbox test (`tests/Sandbox`) is skipped unless `SELCOM_SANDBOX_API_KEY`, `SELCOM_SANDBOX_API_SECRET` and `SELCOM_SANDBOX_VENDOR` are set; it makes one read-only call and never runs in CI.
 
@@ -443,4 +430,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Changes are listed in [CHANGELOG.md](CHA
 
 ## License
 
-[Apache License 2.0](LICENSE). Not affiliated with Selcom Paytech Ltd.
+[Apache License 2.0](LICENSE).
