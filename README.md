@@ -372,7 +372,7 @@ new Psr18Transport(fn (TimeoutProfile $p) => new GuzzleHttp\Client([
 
 **Timeouts and PSR-18.** PSR-18 has no way to pass a timeout with a request, so the timeouts live in the client, and no request runs without them. `Psr18Transport` therefore needs one of three things: nothing (it builds a Guzzle client per profile, so Guzzle must be installed), a closure that builds one client per `TimeoutProfile`, or a ready client together with `clientManagesTimeouts: true`, by which you confirm that the client applies the connect and read timeouts itself. A ready client without the flag is refused with a `ConfigurationException`.
 
-**Fresh connections for payments.** The payment profile has `freshConnection = true`: each payment request uses a new connection and does not leave it open for reuse (`CURLOPT_FRESH_CONNECT` and `CURLOPT_FORBID_REUSE` on cURL). The default Guzzle route does this for you. With a custom client, disable connection reuse for the payment profile yourself.
+**Fresh connections for payments and writes.** The payment and write profiles have `freshConnection = true`: each such request uses a new connection and does not leave it open for reuse (`CURLOPT_FRESH_CONNECT` and `CURLOPT_FORBID_REUSE` on cURL). The default Guzzle route does this for you. With a custom client, disable connection reuse for the payment and write profiles yourself.
 
 **No hidden resends.** Whatever client you plug in must not retry requests on its own (no retry middleware, no automatic resend of a POST): a repeated POST is a second payment attempt. Retries are the caller's decision, see above.
 
