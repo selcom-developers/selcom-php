@@ -3,11 +3,9 @@
 
 Framework-agnostic PHP client for the Selcom API gateway: request signing, checkout, payouts and webhooks.
 
-> **Not affiliated with Selcom Paytech Ltd.** This is a community project, written from scratch under the Apache License 2.0. "Selcom" names the API it talks to. For API access, credentials, contracts and support, go to Selcom: <https://developers.selcommobile.com/>. Where this README and Selcom's portal disagree about the API, the portal wins.
+> **Not affiliated with Selcom Paytech Ltd.** This is a community project under the Apache License 2.0. "Selcom" names the API it talks to. For API access, credentials, contracts and support, go to Selcom: <https://developers.selcommobile.com/>. Where this README and Selcom's portal disagree about the API, the portal wins.
 
 Every layer is usable on its own and replaceable: the **signer** is a pure function, the **transport** is an interface, the **client** gives one typed method per operation, **results** carry both a typed status and the raw response, and the **webhook verifier** and **redactor** stand alone.
-
-The rules this client follows (signing, result codes, retries, webhooks) live in the shared spec: <https://github.com/selcom-developers/selcom-spec> (this release is tested against `v0.2.1`, recorded in [`SPEC_VERSION`](SPEC_VERSION)).
 
 ## Contents
 
