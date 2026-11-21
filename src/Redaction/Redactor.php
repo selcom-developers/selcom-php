@@ -51,15 +51,17 @@ final class Redactor
      * Redact a flat or nested parameter or body array.
      *
      * @param array<int|string, mixed> $data
+     * @param string|null $path The request path, if known: `utilityref` is masked as a phone number
+     *                          on every `/v1/walletcashin/` path
      * @return array<int|string, mixed>
      */
-    public function redactParams(array $data): array
+    public function redactParams(array $data, ?string $path = null): array
     {
-        $isCashin = $this->isCashin($data);
+        $isCashin = self::isCashinPath($path) || $this->isCashin($data);
         $out = [];
         foreach ($data as $key => $value) {
             if (is_array($value)) {
-                $out[$key] = $this->redactParams($value);
+                $out[$key] = $this->redactParams($value, $path);
                 continue;
             }
             $out[$key] = $this->redactValue((string) $key, $value, $isCashin);
@@ -71,10 +73,10 @@ final class Redactor
     /**
      * Redact a query string, keeping its order and encoding of the other fields.
      */
-    public function redactQuery(string $query): string
+    public function redactQuery(string $query, ?string $path = null): string
     {
         $pairs = [];
-        $isCashin = false;
+        $isCashin = self::isCashinPath($path);
         foreach (explode('&', $query) as $part) {
             if ($part === '') {
                 continue;
@@ -98,14 +100,14 @@ final class Redactor
      * Redact a JSON body (request or response). Returns the redacted JSON, or the placeholder
      * "[UNPARSEABLE BODY OMITTED]" when the text is not JSON, so nothing sensitive leaks through.
      */
-    public function redactJson(string $json): string
+    public function redactJson(string $json, ?string $path = null): string
     {
         $decoded = json_decode($json, true);
         if (!is_array($decoded)) {
             return '[UNPARSEABLE BODY OMITTED]';
         }
 
-        $encoded = json_encode($this->redactParams($decoded), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PARTIAL_OUTPUT_ON_ERROR);
+        $encoded = json_encode($this->redactParams($decoded, $path), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PARTIAL_OUTPUT_ON_ERROR);
 
         return $encoded === false ? '{}' : $encoded;
     }
@@ -153,6 +155,11 @@ final class Redactor
         }
 
         return false;
+    }
+
+    private static function isCashinPath(?string $path): bool
+    {
+        return $path !== null && str_contains($path, '/v1/walletcashin/');
     }
 
     private static function isCashinCode(string $code): bool

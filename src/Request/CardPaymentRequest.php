@@ -24,7 +24,7 @@ final class CardPaymentRequest implements OperationRequest
      * @param string $buyerUserId Same value as on the buyer's orders
      * @param string $gatewayBuyerUuid From the buyer's first order
      */
-    public function __construct(string $transid, string $orderId, string $cardToken, string $buyerUserId, string $gatewayBuyerUuid)
+    public function __construct(string $transid, string $orderId, #[\SensitiveParameter] string $cardToken, string $buyerUserId, string $gatewayBuyerUuid)
     {
         $this->transid = Check::required('transid', $transid);
         $this->orderId = Check::required('order_id', $orderId);

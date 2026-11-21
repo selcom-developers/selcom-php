@@ -13,5 +13,5 @@ interface DigestSigner
     public function method(): string;
 
     /** The base64 digest of the signing string. Never empty. */
-    public function sign(string $signingString): string;
+    public function sign(#[\SensitiveParameter] string $signingString): string;
 }

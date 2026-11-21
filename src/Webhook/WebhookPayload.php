@@ -6,6 +6,7 @@ namespace SelcomDevelopers\Selcom\Webhook;
 
 use SelcomDevelopers\Selcom\Amounts;
 use SelcomDevelopers\Selcom\Exception\ValidationException;
+use SelcomDevelopers\Selcom\Redaction\Redactor;
 use SelcomDevelopers\Selcom\Result\ResponseClassifier;
 
 /**
@@ -28,8 +29,8 @@ final class WebhookPayload
         public readonly ?string $channel,
         /** Whole TZS, parsed strictly from text such as "10,000"; null when absent or not a whole amount. */
         public readonly ?int $amountTzs,
-        public readonly ?string $phone,
-        public readonly array $fields,
+        #[\SensitiveParameter] public readonly ?string $phone,
+        #[\SensitiveParameter] public readonly array $fields,
     ) {
     }
 
@@ -57,6 +58,26 @@ final class WebhookPayload
             $str('phone') ?? $str('msisdn'),
             $body,
         );
+    }
+
+    /**
+     * Printing a payload shows masked data only.
+     *
+     * @return array<string, mixed>
+     */
+    public function __debugInfo(): array
+    {
+        return [
+            'orderId' => $this->orderId,
+            'transid' => $this->transid,
+            'reference' => $this->reference,
+            'result' => $this->result,
+            'resultCode' => $this->resultCode,
+            'paymentStatus' => $this->paymentStatus,
+            'channel' => $this->channel,
+            'amountTzs' => $this->amountTzs,
+            'fields' => (new Redactor())->redactParams($this->fields),
+        ];
     }
 
     /** The delivery's key for deduplication: (order_id, transid). Null when either is missing. */

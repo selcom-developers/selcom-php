@@ -1,11 +1,22 @@
 {
     "name": "selcom-developers/selcom-php",
     "description": "Framework-agnostic PHP client for the Selcom API gateway: signing, checkout, payouts, webhooks. Not affiliated with Selcom Paytech Ltd.",
-    "version": "0.1.0",
     "type": "library",
     "license": "Apache-2.0",
-    "keywords": ["selcom", "tanzania", "payments", "psr-18", "mobile-money"],
+    "keywords": [
+        "selcom",
+        "tanzania",
+        "payments",
+        "psr-18",
+        "mobile-money"
+    ],
     "homepage": "https://github.com/selcom-developers/selcom-php",
+    "authors": [
+        {
+            "name": "Selcom Developers community",
+            "homepage": "https://github.com/selcom-developers"
+        }
+    ],
     "support": {
         "issues": "https://github.com/selcom-developers/selcom-php/issues",
         "source": "https://github.com/selcom-developers/selcom-php"
@@ -40,7 +51,7 @@
         "test": "phpunit",
         "analyse": "phpstan analyse --memory-limit=1G",
         "check": [
-            "@composer validate",
+            "@composer validate --strict",
             "@analyse",
             "@test"
         ]
@@ -54,5 +65,8 @@
         }
     },
     "minimum-stability": "stable",
-    "prefer-stable": true
+    "prefer-stable": true,
+    "suggest": {
+        "guzzlehttp/guzzle": "The default transport builds a Guzzle client per timeout profile (connect and read timeouts, a fresh connection for payments)"
+    }
 }

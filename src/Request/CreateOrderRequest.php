@@ -37,7 +37,7 @@ final class CreateOrderRequest implements OperationRequest
     public readonly ?int $expiryMinutes;
 
     /**
-     * @param int $amount Whole units of $currency
+     * @param mixed $amount An int, a string of digits or an integral float Whole units of $currency; a fraction is an error, never rounded
      * @param string $buyerPhone MSISDN in international form, 255...
      * @param list<PaymentMethod> $paymentMethods At least one
      * @param string|null $buyerUserId The buyer's ID in your system; null for guest checkout
@@ -48,7 +48,7 @@ final class CreateOrderRequest implements OperationRequest
         string $buyerEmail,
         string $buyerName,
         string $buyerPhone,
-        int $amount,
+        mixed $amount,
         public readonly Currency $currency,
         array $paymentMethods,
         public readonly Address $billing,

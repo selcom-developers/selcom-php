@@ -36,7 +36,7 @@ final class ResponseClassifier
      *
      * @throws InvalidResponseException when there is no verdict and the operation moves no money
      */
-    public static function classify(OperationKind $kind, int $httpStatus, string $rawBody): array
+    public static function classify(OperationKind $kind, int $httpStatus, #[\SensitiveParameter] string $rawBody): array
     {
         $body = self::decode($rawBody);
         $code = $body === null ? null : self::normaliseResultCode($body['resultcode'] ?? null);
@@ -50,7 +50,7 @@ final class ResponseClassifier
             return [Status::Ambiguous, $code, $body];
         }
 
-        return [self::statusFor($kind, $code, $body), $code, $body];
+        return [self::statusFor($kind, $code, $body, self::dataIsList($rawBody)), $code, $body];
     }
 
     /** Trim; a JSON number becomes three digits (0 becomes "000"); anything else is no code. */
@@ -71,10 +71,10 @@ final class ResponseClassifier
     /**
      * @param array<string, mixed> $body
      */
-    private static function statusFor(OperationKind $kind, string $code, array $body): Status
+    private static function statusFor(OperationKind $kind, string $code, array $body, bool $dataIsList): Status
     {
         if ($code === '000') {
-            return $kind === OperationKind::OrderStatus ? self::orderStatus($body) : Status::Success;
+            return $kind === OperationKind::OrderStatus ? self::orderStatus($body, $dataIsList) : Status::Success;
         }
         if ($code === '111' || $code === '927') {
             return Status::Pending;
@@ -96,10 +96,11 @@ final class ResponseClassifier
     /**
      * @param array<string, mixed> $body
      */
-    private static function orderStatus(array $body): Status
+    private static function orderStatus(array $body, bool $dataIsList): Status
     {
         $data = $body['data'] ?? null;
-        if (!is_array($data) || ($data !== [] && !array_is_list($data))) {
+        // A JSON object (even an empty one) is not a list: only `[]` means "no such order".
+        if (!is_array($data) || !$dataIsList) {
             return Status::Ambiguous;
         }
         if ($data === []) {
@@ -125,12 +126,27 @@ final class ResponseClassifier
     }
 
     /**
+     * Whether `data` is a JSON array, as opposed to an object or something else. PHP decodes `{}`
+     * and `[]` to the same empty array, so this looks at the decoded objects form.
+     */
+    private static function dataIsList(#[\SensitiveParameter] string $rawBody): bool
+    {
+        $tree = json_decode($rawBody);
+
+        return is_object($tree) && property_exists($tree, 'data') && is_array($tree->data);
+    }
+
+    /**
      * @return array<string, mixed>|null
      */
-    private static function decode(string $rawBody): ?array
+    private static function decode(#[\SensitiveParameter] string $rawBody): ?array
     {
+        $tree = json_decode($rawBody);
+        if (!is_object($tree)) {
+            return null;
+        }
         $decoded = json_decode($rawBody, true);
-        if (!is_array($decoded) || ($decoded !== [] && array_is_list($decoded))) {
+        if (!is_array($decoded)) {
             return null;
         }
 

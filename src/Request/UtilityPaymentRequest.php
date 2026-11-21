@@ -23,10 +23,10 @@ final class UtilityPaymentRequest implements OperationRequest
      * @param string $transid Your unique ID; also the key for the status query
      * @param string $utilityCode Which service, for example LUKU or TOP
      * @param string $utilityRef The customer's reference: meter number, phone number, control number
-     * @param int $amount Whole TZS
+     * @param mixed $amount An int, a string of digits or an integral float Whole TZS; a fraction is an error, never rounded
      * @param string|null $msisdn The end customer's phone number
      */
-    public function __construct(string $transid, string $utilityCode, string $utilityRef, int $amount, ?string $msisdn = null)
+    public function __construct(string $transid, string $utilityCode, string $utilityRef, mixed $amount, ?string $msisdn = null)
     {
         $this->transid = Check::required('transid', $transid);
         $this->utilityCode = Check::required('utilitycode', $utilityCode);

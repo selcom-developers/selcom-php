@@ -22,7 +22,9 @@ final class Timeouts
     public function __construct(?TimeoutProfile $query = null, ?TimeoutProfile $payment = null)
     {
         $this->query = $query ?? new TimeoutProfile(10.0, 10.0);
-        $this->payment = $payment ?? new TimeoutProfile(15.0, 180.0);
+        $this->payment = $payment === null
+            ? new TimeoutProfile(15.0, 180.0, true)
+            : new TimeoutProfile($payment->connectSeconds, $payment->readSeconds, true);
     }
 
     public function forKind(OperationKind $kind): TimeoutProfile

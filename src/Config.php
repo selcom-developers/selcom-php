@@ -48,7 +48,7 @@ final class Config
      *
      * @param array<string, mixed> $config
      */
-    public static function fromArray(array $config): self
+    public static function fromArray(#[\SensitiveParameter] array $config): self
     {
         $environment = Environment::fromName(self::optionalString($config, 'environment'));
         $credentials = new Credentials(

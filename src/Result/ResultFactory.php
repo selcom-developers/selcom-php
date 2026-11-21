@@ -17,7 +17,7 @@ final class ResultFactory
      *
      * @throws InvalidResponseException when there is no verdict and the operation moves no money
      */
-    public static function create(Operation $operation, int $httpStatus, string $rawBody, array $sentParams = []): Result
+    public static function create(Operation $operation, int $httpStatus, #[\SensitiveParameter] string $rawBody, #[\SensitiveParameter] array $sentParams = []): Result
     {
         [$status, $code, $body] = ResponseClassifier::classify($operation->kind(), $httpStatus, $rawBody);
         $body ??= [];

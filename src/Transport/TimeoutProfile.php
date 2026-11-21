@@ -14,6 +14,11 @@ final class TimeoutProfile
     public function __construct(
         public readonly float $connectSeconds,
         public readonly float $readSeconds,
+        /**
+         * Use a new connection for every request and do not keep it for reuse. The payment profile
+         * sets this: a custom client for that profile should disable connection reuse as well.
+         */
+        public readonly bool $freshConnection = false,
     ) {
         if (!($connectSeconds > 0.0) || !($readSeconds > 0.0)) {
             throw new ConfigurationException('Timeouts must be greater than zero.');

@@ -8,7 +8,7 @@ Framework-agnostic PHP client for the Selcom API gateway: request signing, check
 
 Every layer is usable on its own and replaceable: the **signer** is a pure function, the **transport** is an interface, the **client** gives one typed method per operation, **results** carry both a typed status and the raw response, and the **webhook verifier** and **redactor** stand alone.
 
-The rules this client follows (signing, result codes, retries, webhooks) live in the shared spec: <https://github.com/selcom-developers/selcom-spec> (this release is tested against `v0.1.0`, recorded in [`SPEC_VERSION`](SPEC_VERSION)).
+The rules this client follows (signing, result codes, retries, webhooks) live in the shared spec: <https://github.com/selcom-developers/selcom-spec> (this release is tested against `v0.2.1`, recorded in [`SPEC_VERSION`](SPEC_VERSION)).
 
 ## Contents
 
@@ -130,7 +130,7 @@ $config = new Config(
 
 - **A custom base URL** (a simulator or a proxy) is its own explicit step: `$config = $config->withBaseUrl('http://localhost:8080')`. It never replaces a preset silently.
 - **Credentials.** The API key, the secret and the vendor (till) ID are required and checked at construction, not on the first request. The float PIN is needed by payout operations only; a payout without one fails with `ValidationException` before anything is sent. A merchant may use separate credentials for checkout: pass `checkoutCredentials`, and checkout operations use them.
-- **Secrets stay out of output.** `var_dump`, `print_r`, serialisation and exception messages never contain the secret, the PIN, the API key, `Authorization` or `Digest`.
+- **Secrets stay out of output.** `var_dump`, `print_r`, `var_export`, array casts, serialisation and exception messages show none of the secret, the PIN, `Authorization` or `Digest`; the API key shows only its last 4 characters. Secret parameters are marked `#[\SensitiveParameter]`, so they are also left out of stack traces.
 - **Timeouts** are per profile, and no request runs without one:
 
   | Profile | Used by | Connect | Read |
@@ -155,7 +155,7 @@ $config = new Config(
 
 ## Operations
 
-One method per operation. Submitting and querying are separate methods: nothing hides a query inside a submit. Amounts are whole units (an `int`); a fractional amount cannot be expressed, and the signer rejects one that slips in through raw parameters.
+One method per operation. Submitting and querying are separate methods: nothing hides a query inside a submit. Amounts are whole units. Request classes accept an `int`, a string of digits or an integral float, and refuse anything else (a fraction, a negative, zero, more than 9007199254740991) with a `ValidationException`; nothing is rounded or truncated. The signer applies the same rule to raw parameters.
 
 ### Checkout
 
@@ -231,7 +231,7 @@ Every operation returns a `Result` with:
 
 `isFinal()` is true for `SUCCESS`, `FAILED` and `NOT_FOUND`.
 
-The status comes from `resultcode` only (`000` success; `111` and `927` in progress; `999` ambiguous; `404` on a status query is `NOT_FOUND`; anything else failed). The text fields are for people. For `orderStatus` the verdict is the order's `payment_status`, not the query's code. The full table and the edge cases are in the spec's [results.md](https://github.com/selcom-developers/selcom-spec/blob/v0.1.0/docs/results.md).
+The status comes from `resultcode` only (`000` success; `111` and `927` in progress; `999` ambiguous; `404` on a status query is `NOT_FOUND`; anything else failed). The text fields are for people. For `orderStatus` the verdict is the order's `payment_status`, not the query's code. The full table and the edge cases are in the spec's [results.md](https://github.com/selcom-developers/selcom-spec/blob/v0.2.1/docs/results.md).
 
 | Status | Meaning | What you may do |
 |---|---|---|
@@ -307,13 +307,14 @@ $verifier = new WebhookVerifier(
 $raw = file_get_contents('php://input');            // the raw body, before anything parses it
 $verdict = $verifier->verify(getallheaders(), $raw);
 
-http_response_code($verdict->httpStatus());         // 200 for VALID, UNSIGNED, REPLAY; 401 for INVALID, STALE
-
 if ($verdict->shouldProcess()) {                    // VALID or UNSIGNED
     $payload = WebhookPayload::fromRawBody($raw);   // orderId, transid, paymentStatus, amountTzs, ...
-    // 1. deduplicate on $payload->dedupeKey()  2. store (redacted)  3. acknowledge
+    // 1. verify (done)  2. deduplicate on $payload->dedupeKey() and STORE the delivery (redacted);
+    //    if storing fails, answer 5xx so the gateway delivers again
+    // 3. acknowledge with 200
     // 4. later, outside the request: orderStatus($payload->orderId), then act on THAT
 }
+http_response_code($verdict->httpStatus());         // 200 for VALID, UNSIGNED, REPLAY; 401 for INVALID, STALE
 ```
 
 | Verdict | Respond | Process? |
@@ -325,9 +326,10 @@ if ($verdict->shouldProcess()) {                    // VALID or UNSIGNED
 | `STALE` | 401 | No. Log it, redacted |
 
 - `verify(headers, rawBody)` never throws on bad input: bad input is `INVALID`. Header names are matched case-insensitively. The digest is compared in constant time. The timestamp window defaults to 300 seconds and is configurable.
-- `VALID` vouches only for the fields named in `Signed-Fields` (which does not include `amount`). Anything else in the body may have been changed in transit. That is one more reason to take the facts from `orderStatus`.
+- `VALID` covers the fields named in `Signed-Fields`, which must include `order_id` and `transid` and may not contain `&`. Take the status and the amount from `orderStatus`, not from the delivery.
+- Verification is bounded and never throws: oversized input, numbers that are not whole numbers within 2^53 - 1, and anything unparseable are `INVALID`.
 - `WebhookPayload::$amountTzs` parses text such as `"10,000"` strictly into whole shillings, or `null`.
-- The replay store only has to remember digests for the window. In PHP-FPM each request is a new process, so give the verifier a shared `ReplayStore` (APCu, Redis); `InMemoryReplayStore` is for tests and long-running workers. Your own deduplication on `(order_id, transid)` is the durable guard.
+- The replay store keeps each digest until max(now, signed time) + window (`ReplayStore::seen($digest, $keepUntil)`; an entry is live through `$keepUntil`). In PHP-FPM each request is a new process, so give the verifier a shared `ReplayStore` (APCu, Redis); `InMemoryReplayStore` is for tests and long-running workers. Your own deduplication on `(order_id, transid)` is the durable guard.
 - **Open question in the spec:** it is not confirmed which key Selcom signs webhooks with. The samples assume your API secret. Until you have confirmed it in the sandbox, run in report-only mode: log the verdict and process anyway, relying on `orderStatus`. Default to rejecting `INVALID` once you have confirmed.
 - Acknowledge fast (200 as soon as the delivery is stored) and do the `orderStatus` call and fulfilment afterwards. Poll `orderStatus` as the fallback for orders with no final status: webhooks can be lost.
 
@@ -349,17 +351,31 @@ interface Transport
 `Psr18Transport` is the default. It takes any PSR-18 client and PSR-17 factories, found by discovery when you pass nothing:
 
 ```php
-new Psr18Transport();                                   // discovery for everything
-new Psr18Transport($myPsr18Client);                     // your client, discovered factories
-new Psr18Transport($myPsr18Client, $requestFactory, $streamFactory);
-new Psr18Transport(fn (TimeoutProfile $p) => new GuzzleHttp\Client([   // one client per timeout profile
+new Psr18Transport();                                   // a Guzzle client per timeout profile (needs guzzlehttp/guzzle)
+new Psr18Transport(fn (TimeoutProfile $p) => new GuzzleHttp\Client(Psr18Transport::guzzleOptions($p)));
+new Psr18Transport($myPsr18Client, clientManagesTimeouts: true);   // a ready client: you confirm it applies the timeouts
+```
+
+`Psr18Transport::guzzleOptions($profile)` returns what the default route uses. Written out, a per-profile Guzzle client looks like this:
+
+```php
+new Psr18Transport(fn (TimeoutProfile $p) => new GuzzleHttp\Client([
     'connect_timeout' => $p->connectSeconds,
     'timeout' => $p->connectSeconds + $p->readSeconds,
     'allow_redirects' => false,
+    'http_errors' => false,
+    // payments only: a new connection every time, not kept for reuse
+    'curl' => $p->freshConnection ? [CURLOPT_FRESH_CONNECT => true, CURLOPT_FORBID_REUSE => true] : [],
 ]));
 ```
 
-**Timeouts and PSR-18.** PSR-18 has no way to pass a timeout with a request, so the timeouts have to live in the client. `Psr18Transport` therefore offers three routes: with no client given, it builds a Guzzle client per profile when Guzzle is installed (otherwise it uses the discovered client with that client's own timeouts, so configure them yourself); with a closure, it builds one client per profile from your factory; with a ready client, the client's own timeouts apply. If you rely on the spec's 180-second payment read, check which route you are on.
+**Timeouts and PSR-18.** PSR-18 has no way to pass a timeout with a request, so the timeouts live in the client, and no request runs without them. `Psr18Transport` therefore needs one of three things: nothing (it builds a Guzzle client per profile, so Guzzle must be installed), a closure that builds one client per `TimeoutProfile`, or a ready client together with `clientManagesTimeouts: true`, by which you confirm that the client applies the connect and read timeouts itself. A ready client without the flag is refused with a `ConfigurationException`.
+
+**Fresh connections for payments.** The payment profile has `freshConnection = true`: each payment request uses a new connection and does not leave it open for reuse (`CURLOPT_FRESH_CONNECT` and `CURLOPT_FORBID_REUSE` on cURL). The default Guzzle route does this for you. With a custom client, disable connection reuse for the payment profile yourself.
+
+**No hidden resends.** Whatever client you plug in must not retry requests on its own (no retry middleware, no automatic resend of a POST): a repeated POST is a second payment attempt. Retries are the caller's decision, see above.
+
+**What is kept from a failed send.** `TransportException` carries a short summary as its cause (exception classes and the cURL error number), not the client's own exception, whose message and request hold request data.
 
 ## Signing on its own
 
@@ -425,7 +441,7 @@ composer test        # PHPUnit: the shared spec vectors, unit tests, no network
 composer analyse     # PHPStan at the max level, with the strict rules
 ```
 
-The tests run every case and every reject in `signing.json`, every response scenario and every webhook sample from the shared spec, from a copy kept in `tests/vectors`. The spec version is recorded in `SPEC_VERSION`; refresh the copy with `scripts/refresh-spec.sh [tag]`.
+`scripts/check-spec.sh` (run in CI) checks that the copy is byte-identical to selcom-spec at `SPEC_VERSION`. The tests run every case and every reject in `signing.json`, every response scenario and every webhook sample from the shared spec, from a copy kept in `tests/vectors`. The spec version is recorded in `SPEC_VERSION`; refresh the copy with `scripts/refresh-spec.sh [tag]`.
 
 No test calls the network. An opt-in sandbox test (`tests/Sandbox`) is skipped unless `SELCOM_SANDBOX_API_KEY`, `SELCOM_SANDBOX_API_SECRET` and `SELCOM_SANDBOX_VENDOR` are set; it makes one read-only call and never runs in CI.
 

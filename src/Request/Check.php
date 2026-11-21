@@ -35,17 +35,35 @@ final class Check
         return $value;
     }
 
-    /** Whole units, strictly positive. */
-    public static function amount(string $field, int $value): int
+    /**
+     * A positive whole amount, from an int, a numeric string of digits, or an integral float.
+     * Never rounded or truncated: anything else is an error. At most 2^53 - 1.
+     *
+     * @param mixed $value int|string|float
+     */
+    public static function amount(string $field, mixed $value): int
     {
-        if ($value <= 0) {
+        $whole = null;
+        if (is_int($value)) {
+            $whole = $value;
+        } elseif (is_float($value)) {
+            if (is_finite($value) && floor($value) === $value && abs($value) <= 9007199254740991.0) {
+                $whole = (int) $value;
+            }
+        } elseif (is_string($value) && preg_match('/^\d{1,16}(?:\.0+)?$/D', trim($value)) === 1) {
+            $whole = (int) explode('.', trim($value), 2)[0];
+        }
+        if ($whole === null) {
+            throw new ValidationException($field . ' must be a whole number, with no fraction.');
+        }
+        if ($whole <= 0) {
             throw new ValidationException($field . ' must be a positive whole amount.');
         }
-        if ($value > 9007199254740991) {
-            throw new ValidationException($field . ' is too large.');
+        if ($whole > 9007199254740991) {
+            throw new ValidationException($field . ' is too large: at most 9007199254740991.');
         }
 
-        return $value;
+        return $whole;
     }
 
     public static function date(string $field, string $value): string

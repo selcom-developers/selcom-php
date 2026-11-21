@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SelcomDevelopers\Selcom\Signing;
 
 use SelcomDevelopers\Selcom\Exception\SigningException;
+use SelcomDevelopers\Selcom\SecretVault;
 
 /**
  * HMAC-SHA256 keyed with the API secret, standard base64 with padding.
@@ -12,14 +13,16 @@ use SelcomDevelopers\Selcom\Exception\SigningException;
  */
 final class Hs256DigestSigner implements DigestSigner
 {
-    private readonly string $secret;
-
-    public function __construct(string $secret)
+    public function __construct(#[\SensitiveParameter] string $secret)
     {
         if ($secret === '') {
             throw new SigningException('EMPTY_SECRET', 'refusing to sign with an empty secret');
         }
-        $this->secret = $secret;
+        SecretVault::put($this, ['secret' => $secret]);
+    }
+
+    private function __clone()
+    {
     }
 
     public function method(): string
@@ -27,9 +30,9 @@ final class Hs256DigestSigner implements DigestSigner
         return 'HS256';
     }
 
-    public function sign(string $signingString): string
+    public function sign(#[\SensitiveParameter] string $signingString): string
     {
-        return base64_encode(hash_hmac('sha256', $signingString, $this->secret, true));
+        return base64_encode(hash_hmac('sha256', $signingString, SecretVault::get($this, 'secret') ?? '', true));
     }
 
     /** @return array<string, string> */

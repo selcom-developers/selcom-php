@@ -14,7 +14,7 @@ final class TransportResponse
      */
     public function __construct(
         public readonly int $status,
-        public readonly string $body,
+        #[\SensitiveParameter] public readonly string $body,
         public readonly array $headers = [],
     ) {
     }

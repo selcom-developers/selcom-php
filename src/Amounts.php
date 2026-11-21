@@ -18,7 +18,7 @@ final class Amounts
     public static function tryParse(mixed $value): ?int
     {
         if (is_int($value)) {
-            return $value;
+            return $value >= 0 ? $value : null;
         }
         if (!is_string($value)) {
             return null;

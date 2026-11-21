@@ -27,9 +27,9 @@ final class RequestSigner
      */
     public static function sign(
         string $method,
-        array $params,
+        #[\SensitiveParameter] array $params,
         string $timestamp,
-        string $apiKey,
+        #[\SensitiveParameter] string $apiKey,
         DigestSigner $digestSigner,
     ): SignedRequest {
         $method = strtoupper($method);
@@ -70,7 +70,7 @@ final class RequestSigner
      *
      * @throws SigningException
      */
-    public static function flatten(array $params): array
+    public static function flatten(#[\SensitiveParameter] array $params): array
     {
         $flat = [];
         $seen = [];
@@ -85,7 +85,7 @@ final class RequestSigner
     /**
      * The text of one normalised value inside the signing string.
      */
-    public static function valueText(bool|int|string $value): string
+    public static function valueText(#[\SensitiveParameter] bool|int|string $value): string
     {
         return match (true) {
             is_bool($value) => $value ? 'true' : 'false',
@@ -99,7 +99,7 @@ final class RequestSigner
      * @param list<array{0: string, 1: bool|int|string}> $flat
      * @param array<string, true> $seen
      */
-    private static function walk(string $prefix, array $object, array &$flat, array &$seen): void
+    private static function walk(string $prefix, #[\SensitiveParameter] array $object, array &$flat, array &$seen): void
     {
         if ($prefix !== '' && $object === []) {
             throw new SigningException('EMPTY_OBJECT', $prefix . ' is an empty object; omit it');
@@ -136,7 +136,7 @@ final class RequestSigner
      *
      * @throws SigningException
      */
-    public static function normalise(string $key, mixed $value): bool|int|string
+    public static function normalise(string $key, #[\SensitiveParameter] mixed $value): bool|int|string
     {
         if ($value === null) {
             return '';
@@ -168,7 +168,7 @@ final class RequestSigner
     /**
      * @param list<array{0: string, 1: bool|int|string}> $flat
      */
-    public static function signingString(string $timestamp, array $flat): string
+    public static function signingString(string $timestamp, #[\SensitiveParameter] array $flat): string
     {
         $out = 'timestamp=' . $timestamp;
         foreach ($flat as [$key, $value]) {
@@ -181,7 +181,7 @@ final class RequestSigner
     /**
      * @param list<array{0: string, 1: bool|int|string}> $flat
      */
-    private static function encodeQuery(array $flat): string
+    private static function encodeQuery(#[\SensitiveParameter] array $flat): string
     {
         $parts = [];
         foreach ($flat as [$key, $value]) {
@@ -197,7 +197,7 @@ final class RequestSigner
      *
      * @param list<array{0: string, 1: bool|int|string}> $flat
      */
-    private static function encodeBody(array $flat): string
+    private static function encodeBody(#[\SensitiveParameter] array $flat): string
     {
         $flags = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR;
         $parts = [];

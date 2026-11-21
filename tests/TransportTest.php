@@ -17,7 +17,9 @@ use Psr\Http\Client\ClientInterface;
 use Psr\Http\Client\NetworkExceptionInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseInterface;
+use SelcomDevelopers\Selcom\Exception\ConfigurationException;
 use SelcomDevelopers\Selcom\Exception\TransportException;
+use SelcomDevelopers\Selcom\Transport\Timeouts;
 use SelcomDevelopers\Selcom\Transport\FailureClassifier;
 use SelcomDevelopers\Selcom\Transport\Psr18Transport;
 use SelcomDevelopers\Selcom\Transport\TimeoutProfile;
@@ -46,7 +48,7 @@ final class TransportTest extends TestCase
     {
         $mock = new MockHandler([new Response(502, ['X-Test' => 'a'], '<html>Bad Gateway</html>')]);
         $factory = new HttpFactory();
-        $transport = new Psr18Transport($this->guzzle($mock), $factory, $factory);
+        $transport = new Psr18Transport($this->guzzle($mock), $factory, $factory, clientManagesTimeouts: true);
 
         $response = $transport->send($this->request());
 
@@ -67,7 +69,7 @@ final class TransportTest extends TestCase
         $factory = new HttpFactory();
         $transport = new Psr18Transport(
             function (TimeoutProfile $p) use (&$seen): ClientInterface {
-                $seen[] = [$p->connectSeconds, $p->readSeconds];
+                $seen[] = [$p->connectSeconds, $p->readSeconds, $p->freshConnection];
 
                 return $this->guzzle(new MockHandler([new Response(200, [], '{}'), new Response(200, [], '{}')]));
             },
@@ -75,11 +77,11 @@ final class TransportTest extends TestCase
             $factory,
         );
 
-        $transport->send($this->request(new TimeoutProfile(15.0, 180.0)));
-        $transport->send($this->request(new TimeoutProfile(15.0, 180.0)));
+        $transport->send($this->request(new TimeoutProfile(15.0, 180.0, true)));
+        $transport->send($this->request(new TimeoutProfile(15.0, 180.0, true)));
         $transport->send($this->request(new TimeoutProfile(10.0, 10.0)));
 
-        self::assertSame([[15.0, 180.0], [10.0, 10.0]], $seen);
+        self::assertSame([[15.0, 180.0, true], [10.0, 10.0, false]], $seen);
     }
 
     /** @return iterable<string, array{\Throwable, TransportFailure}> */
@@ -89,9 +91,14 @@ final class TransportTest extends TestCase
         yield 'curl 6 resolve' => [new ConnectException('x', $req, null, ['errno' => 6]), TransportFailure::NotSent];
         yield 'curl 7 refused' => [new ConnectException('x', $req, null, ['errno' => 7]), TransportFailure::NotSent];
         yield 'curl 35 tls connect' => [new ConnectException('x', $req, null, ['errno' => 35]), TransportFailure::NotSent];
-        yield 'curl 28 before connect' => [new ConnectException('x', $req, null, ['errno' => 28, 'pretransfer_time' => 0.0]), TransportFailure::NotSent];
-        yield 'curl 28 after connect' => [new ConnectException('x', $req, null, ['errno' => 28, 'pretransfer_time' => 0.31]), TransportFailure::UnknownOutcome];
-        yield 'curl 28 no timings' => [new ConnectException('x', $req, null, ['errno' => 28]), TransportFailure::UnknownOutcome];
+        yield 'connect timeout' => [new ConnectException('x', $req, null, ['errno' => 28, 'connect_time' => 0.0, 'pretransfer_time' => 0.0, 'starttransfer_time' => 0.0, 'size_upload' => 0.0]), TransportFailure::NotSent];
+        yield 'timeout after connect' => [new ConnectException('x', $req, null, ['errno' => 28, 'connect_time' => 0.02, 'pretransfer_time' => 0.31]), TransportFailure::UnknownOutcome];
+        yield 'timeout after bytes sent' => [new ConnectException('x', $req, null, ['errno' => 28, 'connect_time' => 0.0, 'size_upload' => 120.0]), TransportFailure::UnknownOutcome];
+        yield 'pretransfer zero but no connect time' => [new ConnectException('x', $req, null, ['errno' => 28, 'pretransfer_time' => 0.0]), TransportFailure::UnknownOutcome];
+        yield 'handshake error after bytes' => [new ConnectException('x', $req, null, ['errno' => 35, 'size_upload' => 10.0]), TransportFailure::UnknownOutcome];
+        yield 'record-level tls error' => [new \RuntimeException('cURL error 56: OpenSSL SSL_read: bad record mac'), TransportFailure::UnknownOutcome];
+        yield 'unreachable' => [new \RuntimeException('Network is unreachable'), TransportFailure::UnknownOutcome];
+        yield 'timeout without timings' => [new ConnectException('x', $req, null, ['errno' => 28]), TransportFailure::UnknownOutcome];
         yield 'curl 56 recv failure' => [new ConnectException('x', $req, null, ['errno' => 56]), TransportFailure::UnknownOutcome];
         yield 'curl 52 empty reply' => [new ConnectException('x', $req, null, ['errno' => 52]), TransportFailure::UnknownOutcome];
         yield 'message: cURL error 6' => [new \RuntimeException('cURL error 6: Could not resolve host: apigw.example'), TransportFailure::NotSent];
@@ -112,7 +119,7 @@ final class TransportTest extends TestCase
     {
         $mock = new MockHandler([new ConnectException('cURL error 7: refused', new Request('POST', 'https://x'), null, ['errno' => 7])]);
         $factory = new HttpFactory();
-        $transport = new Psr18Transport($this->guzzle($mock), $factory, $factory);
+        $transport = new Psr18Transport($this->guzzle($mock), $factory, $factory, clientManagesTimeouts: true);
 
         try {
             $transport->send($this->request());
@@ -120,7 +127,8 @@ final class TransportTest extends TestCase
         } catch (TransportException $e) {
             self::assertSame(TransportFailure::NotSent, $e->failure);
             self::assertTrue($e->isNotSent());
-            self::assertInstanceOf(ConnectException::class, $e->getPrevious());
+            self::assertNotInstanceOf(ConnectException::class, $e->getPrevious());
+            self::assertStringContainsString('cURL errno 7', (string) $e->getPrevious()?->getMessage());
         }
     }
 
@@ -138,7 +146,7 @@ final class TransportTest extends TestCase
             }
         };
         $factory = new HttpFactory();
-        $transport = new Psr18Transport($client, $factory, $factory);
+        $transport = new Psr18Transport($client, $factory, $factory, clientManagesTimeouts: true);
 
         try {
             $transport->send($this->request());
@@ -154,11 +162,55 @@ final class TransportTest extends TestCase
             }
         };
         try {
-            (new Psr18Transport($throwing, $factory, $factory))->send($this->request());
+            (new Psr18Transport($throwing, $factory, $factory, clientManagesTimeouts: true))->send($this->request());
             self::fail('expected a TransportException');
         } catch (TransportException $e) {
             self::assertSame(TransportFailure::UnknownOutcome, $e->failure);
         }
+    }
+
+    public function testErrorChainCarriesNoRequestData(): void
+    {
+        $request = new Request('POST', 'https://x/v1/walletcashin/process', ['Authorization' => 'SELCOM c2VjcmV0LWtleQ==', 'Digest' => 'abc=='], '{"msisdn":"255700000001","pin":"4321"}');
+        $mock = new MockHandler([new ConnectException('cURL error 7: failed 255700000001 SELCOM c2VjcmV0LWtleQ== abc== 4321', $request, null, ['errno' => 7])]);
+        $factory = new HttpFactory();
+        $transport = new Psr18Transport($this->guzzle($mock), $factory, $factory, clientManagesTimeouts: true);
+
+        try {
+            $transport->send($this->request());
+            self::fail('expected a TransportException');
+        } catch (TransportException $e) {
+            $text = '';
+            for ($c = $e; $c !== null; $c = $c->getPrevious()) {
+                $text .= $c->getMessage() . "
+";
+            }
+            foreach (['255700000001', 'c2VjcmV0LWtleQ==', 'abc==', '4321'] as $value) {
+                self::assertStringNotContainsString($value, $text);
+            }
+        }
+    }
+
+    public function testAReadyClientNeedsAnExplicitChoiceAboutTimeouts(): void
+    {
+        $client = $this->guzzle(new MockHandler([]));
+        $this->expectException(ConfigurationException::class);
+        new Psr18Transport($client);
+    }
+
+    public function testPaymentProfileUsesAFreshConnection(): void
+    {
+        $payment = (new Timeouts())->payment;
+        self::assertTrue($payment->freshConnection);
+        $options = Psr18Transport::guzzleOptions($payment);
+        self::assertSame(195.0, $options['timeout']);
+        self::assertSame(15.0, $options['connect_timeout']);
+        if (defined('CURLOPT_FRESH_CONNECT')) {
+            self::assertSame([CURLOPT_FRESH_CONNECT => true, CURLOPT_FORBID_REUSE => true], $options['curl']);
+        }
+        self::assertArrayNotHasKey('curl', Psr18Transport::guzzleOptions((new Timeouts())->query));
+        // A payment profile given without the flag still gets it.
+        self::assertTrue((new Timeouts(null, new TimeoutProfile(20.0, 200.0)))->payment->freshConnection);
     }
 
     public function testDiscoveryFindsAClientAndFactories(): void

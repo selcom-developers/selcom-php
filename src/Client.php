@@ -77,6 +77,12 @@ final class Client
             ?? static fn (Credentials $c): DigestSigner => new Hs256DigestSigner($c->secret());
     }
 
+    /** @return array<string, mixed> */
+    public function __debugInfo(): array
+    {
+        return ['version' => self::VERSION, 'config' => $this->config];
+    }
+
     // ---- Checkout ---------------------------------------------------------------------------
 
     public function createOrder(CreateOrderRequest $request): CreateOrderResult

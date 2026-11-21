@@ -6,6 +6,14 @@ All notable changes to this project are documented in this file. The format foll
 
 First version, 0.1.0, not yet published.
 
+### Changed
+
+- Webhook verification follows selcom-spec v0.2.1: `order_id` and `transid` must be signed, signed names and values may not contain `&`, number handling is bounded, and replay entries are kept until max(now, signed time) + window.
+- `Psr18Transport` requires a per-profile client factory, or `clientManagesTimeouts: true` for a ready client; payment requests use a fresh connection; the failed-send cause is a short summary.
+- Request classes accept an int, a digit string or an integral float for amounts and refuse anything else.
+- Secret parameters are marked `#[\SensitiveParameter]`; secrets are held outside the objects that use them; the API key shows its last 4 characters.
+- Packaging: no `version` field, `export-ignore` rules, `suggest` and `authors`, CI actions pinned to commit SHAs, `composer audit` and a vectors-match-spec step.
+
 ### Added
 
 - Configuration with an explicit environment (no default), credentials with the secret and PIN kept out of dumps, per-profile timeouts, and an optional second credential set for checkout.

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace SelcomDevelopers\Selcom\Result;
 
 use SelcomDevelopers\Selcom\Operation;
+use SelcomDevelopers\Selcom\Redaction\Redactor;
 use SelcomDevelopers\Selcom\Status;
 
 /**
@@ -29,8 +30,8 @@ class Result
         public readonly ?string $transid,
         public readonly ?string $orderId,
         public readonly int $httpStatus,
-        public readonly array $data,
-        public readonly string $raw,
+        #[\SensitiveParameter] public readonly array $data,
+        #[\SensitiveParameter] public readonly string $raw,
     ) {
     }
 
@@ -53,6 +54,30 @@ class Result
     public function entry(): array
     {
         return $this->data[0] ?? [];
+    }
+
+    /**
+     * Printing a result shows the body with secrets and personal data masked.
+     *
+     * @return array<string, mixed>
+     */
+    public function __debugInfo(): array
+    {
+        $redactor = new Redactor();
+
+        return [
+            'operation' => $this->operation->value,
+            'status' => $this->status->value,
+            'resultCode' => $this->resultCode,
+            'result' => $this->result,
+            'message' => $this->message,
+            'reference' => $this->reference,
+            'transid' => $this->transid,
+            'orderId' => $this->orderId,
+            'httpStatus' => $this->httpStatus,
+            'data' => array_map(static fn (array $entry): array => $redactor->redactParams($entry), $this->data),
+            'raw' => $redactor->redactJson($this->raw),
+        ];
     }
 
     protected function entryString(string $key): ?string

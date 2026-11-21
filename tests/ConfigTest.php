@@ -102,7 +102,7 @@ final class ConfigTest extends TestCase
         new Config(Environment::Sandbox, Fixtures::credentials(), maxNotSentRetries: 6);
     }
 
-    public function testSecretsDoNotLeakFromDumpsOrSerialisation(): void
+    public function testSecretsAreMaskedInOutputAndNotSerialisable(): void
     {
         $config = Fixtures::config();
         $dump = print_r($config, true) . print_r($config->credentials, true);

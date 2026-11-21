@@ -17,9 +17,9 @@ jobs:
       matrix:
         php: ['8.2', '8.3', '8.4', '8.5']
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
-      - uses: shivammathur/setup-php@v2
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2 (2.40.0)
         with:
           php-version: ${{ matrix.php }}
           extensions: json, hash, mbstring
@@ -27,10 +27,16 @@ jobs:
           tools: composer:v2
 
       - name: Validate composer.json
-        run: composer validate
+        run: composer validate --strict
 
       - name: Install dependencies
         run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Dependency advisories
+        run: composer audit
+
+      - name: Vectors match selcom-spec at SPEC_VERSION
+        run: bash scripts/check-spec.sh
 
       - name: Static analysis (PHPStan, max level)
         run: composer analyse
