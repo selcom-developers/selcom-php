@@ -1,4 +1,5 @@
 # selcom-php
+[![CI](https://github.com/selcom-developers/selcom-php/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/selcom-developers/selcom-php/actions/workflows/ci.yml)
 
 Framework-agnostic PHP client for the Selcom API gateway: request signing, checkout, payouts and webhooks.
 
