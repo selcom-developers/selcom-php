@@ -3,6 +3,8 @@
 
 Framework-agnostic PHP client for the Selcom API gateway: request signing, checkout, payouts and webhooks.
 
+Documentation: <https://selcom-developers.github.io/>
+
 > **Not affiliated with Selcom Paytech Ltd.** For API access, credentials, contracts and support, go to Selcom: <https://developers.selcommobile.com/>.
 
 ## Contents
